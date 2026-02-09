@@ -5,55 +5,67 @@ const fs = require("fs");
 
 const app = express();
 
-/** ✅ CORS robusto + preflight */
+/* =======================
+   CORS (guialar.net)
+======================= */
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const allowed = ["https://guialar.net", "https://www.guialar.net"];
+  const allowedOrigins = [
+    "https://guialar.net",
+    "https://www.guialar.net"
+  ];
 
-  if (origin && allowed.includes(origin)) {
+  if (allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
 
-  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Vary", "Origin");
 
-  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   next();
 });
 
 app.use(express.json());
 
-app.get("/", (req, res) => res.send("API OK ✅"));
+/* =======================
+   HEALTH CHECK
+======================= */
+app.get("/", (req, res) => {
+  res.send("API GUIALAR OK ✅");
+});
 
+/* =======================
+   ORÇAMENTO
+======================= */
 app.post("/api/orcamento", async (req, res) => {
   try {
-    // 1) Validar variáveis
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      return res.status(500).json({
-        success: false,
-        error: "Faltam variáveis EMAIL_USER e/ou EMAIL_PASS"
-      });
-    }
+    console.log("BODY RECEBIDO:", req.body);
 
-    // 2) Ler e validar body
-    const { largura, altura, total, email } = req.body;
+    const { largura, altura, email } = req.body;
 
-    if (typeof largura !== "number" || typeof altura !== "number" || typeof total !== "number") {
+    // validações básicas
+    if (
+      typeof largura !== "number" ||
+      typeof altura !== "number" ||
+      !email ||
+      !email.includes("@")
+    ) {
       return res.status(400).json({
         success: false,
-        error: "largura/altura/total têm de ser números"
+        error: "Dados inválidos"
       });
     }
 
-    if (!email || typeof email !== "string" || !email.includes("@")) {
-      return res.status(400).json({
-        success: false,
-        error: "Email inválido"
-      });
-    }
+    // cálculo simples (podes mudar depois)
+    const precoPorMetroQuadrado = 10;
+    const total = largura * altura * precoPorMetroQuadrado;
 
-    // 3) Gerar PDF (em /tmp)
+    // gerar PDF
     const fileName = `orcamento-${Date.now()}.pdf`;
     const filePath = `/tmp/${fileName}`;
 
@@ -71,14 +83,16 @@ app.post("/api/orcamento", async (req, res) => {
 
       doc.fontSize(12).text(`Largura: ${largura} m`);
       doc.text(`Altura: ${altura} m`);
-      doc.text(`Total: €${Number(total).toFixed(2)}`);
+      doc.moveDown();
+      doc.text(`Total estimado: €${total.toFixed(2)}`);
 
       doc.moveDown();
       doc.text("Obrigado por escolher a Guia Lar.");
+
       doc.end();
     });
 
-    // 4) SMTP Hostinger
+    // transporter Hostinger
     const transporter = nodemailer.createTransport({
       host: "smtp.hostinger.com",
       port: 587,
@@ -89,27 +103,35 @@ app.post("/api/orcamento", async (req, res) => {
       }
     });
 
-    // (opcional) ajuda a falhar com mensagem clara se credenciais estiverem erradas
     await transporter.verify();
 
-    // 5) Enviar email com PDF
     await transporter.sendMail({
       from: `"Guia Lar" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: "O seu orçamento (PDF em anexo)",
-      text: "Segue em anexo o seu orçamento. Obrigado!",
-      attachments: [{ filename: fileName, path: filePath }]
+      subject: "O seu orçamento – Guia Lar",
+      text: "Segue em anexo o seu orçamento em PDF.",
+      attachments: [
+        {
+          filename: fileName,
+          path: filePath
+        }
+      ]
     });
 
-    return res.json({ success: true });
+    res.json({ success: true });
   } catch (err) {
-    console.error("ERRO /api/orcamento:", err);
-    return res.status(500).json({
+    console.error("ERRO API:", err);
+    res.status(500).json({
       success: false,
-      error: err?.message || "Erro interno"
+      error: err.message || "Erro interno"
     });
   }
 });
 
+/* =======================
+   START
+======================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Running on", PORT));
+app.listen(PORT, () => {
+  console.log("API a correr na porta", PORT);
+});
