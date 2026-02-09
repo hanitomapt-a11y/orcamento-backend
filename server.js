@@ -1,27 +1,51 @@
 const express = require("express");
+const cors = require("cors");
 const PDFDocument = require("pdfkit");
 const nodemailer = require("nodemailer");
-const cors = require("cors");
 const fs = require("fs");
 
 const app = express();
-app.use(cors({ origin: "https://guialar.net" }));
+
+app.use(cors({
+  origin: ["https://guialar.net", "https://www.guialar.net"],
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
+}));
+app.options("*", cors());
 app.use(express.json());
 
 app.get("/", (req, res) => res.send("API de Orçamentos a funcionar ✅"));
 
+function assertEnv() {
+  const missing = [];
+  if (!process.env.EMAIL_USER) missing.push("EMAIL_USER");
+  if (!process.env.EMAIL_PASS) missing.push("EMAIL_PASS");
+  return missing;
+}
+
 app.post("/api/orcamento", async (req, res) => {
   try {
-    const { largura, altura, total, email } = req.body;
-
-    if (!largura || !altura || !email || typeof total !== "number") {
-      return res.status(400).json({ success: false, error: "Dados inválidos" });
+    const missingEnv = assertEnv();
+    if (missingEnv.length) {
+      return res.status(500).json({
+        success: false,
+        error: `Faltam variáveis de ambiente: ${missingEnv.join(", ")}`
+      });
     }
 
+    const { largura, altura, total, email } = req.body;
+
+    if (typeof largura !== "number" || typeof altura !== "number" || typeof total !== "number") {
+      return res.status(400).json({ success: false, error: "largura/altura/total têm de ser números" });
+    }
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Email inválido" });
+    }
+
+    // 1) Gerar PDF para /tmp
     const fileName = `orcamento-${Date.now()}.pdf`;
     const filePath = `/tmp/${fileName}`;
 
-    // Gerar PDF
     await new Promise((resolve, reject) => {
       const doc = new PDFDocument();
       const stream = fs.createWriteStream(filePath);
@@ -33,11 +57,11 @@ app.post("/api/orcamento", async (req, res) => {
       doc.moveDown();
       doc.fontSize(12).text(`Largura: ${largura} m`);
       doc.text(`Altura: ${altura} m`);
-      doc.text(`Total: €${Number(total).toFixed(2)}`);
+      doc.text(`Total: €${total.toFixed(2)}`);
       doc.end();
     });
 
-    // SMTP (Hostinger)
+    // 2) SMTP Hostinger (recomendado 587 + STARTTLS)
     const transporter = nodemailer.createTransport({
       host: "smtp.hostinger.com",
       port: 587,
@@ -48,6 +72,10 @@ app.post("/api/orcamento", async (req, res) => {
       }
     });
 
+    // Testar SMTP (se falhar, apanhas aqui com mensagem clara)
+    await transporter.verify();
+
+    // 3) Enviar email com anexo
     await transporter.sendMail({
       from: `"Guia Lar" <${process.env.EMAIL_USER}>`,
       to: email,
