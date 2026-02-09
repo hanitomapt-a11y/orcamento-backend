@@ -1,23 +1,11 @@
-app.post("/api/orcamento", async (req, res) => {
-  try {
-    const transporter = nodemailer.createTransport({
-      host: "smtp.hostinger.com",
-      port: 587,
-      secure: false,
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-    });
+const express = require("express");
+const app = express();
 
-    await transporter.verify();
+app.get("/", (req, res) => {
+  res.send("API OK — servidor arrancou ✅");
+});
 
-    await transporter.sendMail({
-      from: `"Guia Lar" <${process.env.EMAIL_USER}>`,
-      to: req.body.email,
-      subject: "Teste SMTP",
-      text: "Se recebeste isto, o email está configurado."
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Servidor a correr na porta", PORT);
 });
