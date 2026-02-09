@@ -1,28 +1,70 @@
-<script>
-document.getElementById("orcamentoForm").addEventListener("submit", async function(e) {
-  e.preventDefault();
+const express = require("express");
+const PDFDocument = require("pdfkit");
+const nodemailer = require("nodemailer");
+const cors = require("cors");
+const fs = require("fs");
 
-  const largura = Number(document.getElementById("largura").value) / 100;
-  const altura  = Number(document.getElementById("altura").value) / 100;
-  const email   = document.getElementById("email").value.trim();
-  const total   = (largura * altura) * 25;
+const app = express();
+app.use(cors({ origin: "https://guialar.net" }));
+app.use(express.json());
 
-  const out = document.getElementById("resultado");
-  out.innerText = "A enviar por email...";
+app.get("/", (req, res) => res.send("API de Orçamentos a funcionar ✅"));
 
+app.post("/api/orcamento", async (req, res) => {
   try {
-    const res = await fetch("https://api.guialar.net/api/orcamento", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ largura, altura, total, email })
+    const { largura, altura, total, email } = req.body;
+
+    if (!largura || !altura || !email || typeof total !== "number") {
+      return res.status(400).json({ success: false, error: "Dados inválidos" });
+    }
+
+    const fileName = `orcamento-${Date.now()}.pdf`;
+    const filePath = `/tmp/${fileName}`;
+
+    // Gerar PDF
+    await new Promise((resolve, reject) => {
+      const doc = new PDFDocument();
+      const stream = fs.createWriteStream(filePath);
+      stream.on("finish", resolve);
+      stream.on("error", reject);
+
+      doc.pipe(stream);
+      doc.fontSize(20).text("Orçamento de Cortinados", { align: "center" });
+      doc.moveDown();
+      doc.fontSize(12).text(`Largura: ${largura} m`);
+      doc.text(`Altura: ${altura} m`);
+      doc.text(`Total: €${Number(total).toFixed(2)}`);
+      doc.end();
     });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) throw new Error(data.error || ("HTTP " + res.status));
+    // SMTP (Hostinger)
+    const transporter = nodemailer.createTransport({
+      host: "smtp.hostinger.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
 
-    out.innerText = "Orçamento enviado ✅ (confere spam)";
+    await transporter.sendMail({
+      from: `"Guia Lar" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "O seu orçamento de cortinados",
+      text: "Segue em anexo o seu orçamento.",
+      attachments: [{ filename: fileName, path: filePath }]
+    });
+
+    return res.json({ success: true });
   } catch (err) {
-    out.innerText = "Erro ❌: " + err.message;
+    console.error("ERRO /api/orcamento:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Erro interno"
+    });
   }
 });
-</script>
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Servidor ativo na porta", PORT));
