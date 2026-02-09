@@ -1,6 +1,7 @@
 const express = require("express");
 const app = express();
 
+// ✅ CORS robusto + preflight
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowed = ["https://guialar.net", "https://www.guialar.net"];
@@ -8,6 +9,7 @@ app.use((req, res, next) => {
   if (origin && allowed.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
+
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -21,6 +23,7 @@ app.use(express.json());
 app.get("/", (req, res) => res.send("API OK ✅"));
 
 app.post("/api/orcamento", (req, res) => {
+  // ✅ só para testar ligação do site -> API
   res.json({ success: true, received: req.body });
 });
 
