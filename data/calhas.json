@@ -1,0 +1,4 @@
+[
+  { "id": "c1", "nome": "Calha alumínio simples", "preco": 19.9, "imagem": "https://guialar.net/img/calhas/c1.jpg" },
+  { "id": "c2", "nome": "Calha dupla", "preco": 29.9, "imagem": "https://guialar.net/img/calhas/c2.jpg" }
+]

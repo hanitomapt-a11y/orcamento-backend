@@ -1,0 +1,30 @@
+[
+  {
+    "id": "t1",
+    "tipo": "cortinado",
+    "nome": "Blackout Total",
+    "imagem": "https://guialar.net/img/tecidos/blackout.jpg",
+    "preco": 39.9
+  },
+  {
+    "id": "t2",
+    "tipo": "cortinado",
+    "nome": "Linho Premium",
+    "imagem": "https://guialar.net/img/tecidos/linho.jpg",
+    "preco": 29.9
+  },
+  {
+    "id": "e1",
+    "tipo": "estore",
+    "nome": "Screen 5%",
+    "imagem": "https://guialar.net/img/tecidos/screen5.jpg",
+    "preco": 34.9
+  },
+  {
+    "id": "j1",
+    "tipo": "japones",
+    "nome": "Screen 3%",
+    "imagem": "https://guialar.net/img/tecidos/screen3.jpg",
+    "preco": 36.9
+  }
+]
