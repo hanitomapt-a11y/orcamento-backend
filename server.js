@@ -1,7 +1,6 @@
 const express = require("express");
 const app = express();
 
-// CORS simples (não crasha)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowed = ["https://guialar.net", "https://www.guialar.net"];
@@ -26,4 +25,4 @@ app.post("/api/orcamento", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running on", PORT));
+app.listen(PORT, () => console.log("Running on", PORT));
