@@ -1,172 +1,112 @@
 const express = require("express");
-const fs = require("fs");
+const cors = require("cors");
+const nodemailer = require("nodemailer");
+const PDFDocument = require("pdfkit");
 
 const app = express();
 
-// logs para apanhar crashes
-process.on("uncaughtException", (err) => console.error("uncaughtException:", err));
-process.on("unhandledRejection", (err) => console.error("unhandledRejection:", err));
+// IMPORTANT: CORS para permitir chamadas do guialar.net
+app.use(cors({
+  origin: ["https://guialar.net", "https://www.guialar.net"],
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
 
-// CORS manual robusto
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const allowed = ["https://guialar.net", "https://www.guialar.net"];
+app.use(express.json({ limit: "1mb" }));
 
-  if (origin && allowed.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") return res.status(204).end();
-  next();
+app.get("/", (req, res) => {
+  res.status(200).send("API Guia Lar a funcionar ✅");
 });
 
-app.use(express.json());
-
-app.get("/", (req, res) => res.send("API GUIALAR OK ✅"));
-
-// ===== Preçário (ajusta como quiseres) =====
-function getPrecoBaseM2(tipo, acabamento) {
-  const premium = acabamento === "premium";
-  if (tipo === "cortinado") return premium ? 35 : 25;
-  if (tipo === "estore") return premium ? 45 : 35;
-  if (tipo === "japones") return premium ? 55 : 45;
-  return premium ? 35 : 25;
-}
-
-function getMinimo(tipo) {
-  if (tipo === "cortinado") return 80;
-  if (tipo === "estore") return 120;
-  if (tipo === "japones") return 150;
-  return 80;
-}
-
-function calcTotal({ tipo, acabamento, largura, altura, instalacao, urgencia, calha, blackout }) {
-  const area = Math.max(0, Number(largura) * Number(altura));
-  let total = area * getPrecoBaseM2(tipo, acabamento);
-
-  // extras
-  if (instalacao === "com") total += 40;
-  if (urgencia === "rapida") total += 25;
-  if (blackout === "sim") total += area * 8;
-  if (tipo === "cortinado" && calha && calha !== "nenhuma") total += 30;
-
-  total = Math.max(total, getMinimo(tipo));
-  return { area, total: Number(total.toFixed(2)) };
-}
-
-app.post("/orcamento", async (req, res) => {
-  try {
-    // lazy-load para evitar 503 no arranque
-    const PDFDocument = require("pdfkit");
-    const nodemailer = require("nodemailer");
-
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      return res.status(500).json({ success: false, error: "Faltam EMAIL_USER/EMAIL_PASS" });
-    }
-
-    const {
-      tipo, acabamento, largura, altura,
-      instalacao, urgencia, calha, blackout,
-      cliente
-    } = req.body || {};
-
-    const email = cliente?.email;
-
-    // validações mínimas
-    if (!["cortinado", "estore", "japones"].includes(tipo)) {
-      return res.status(400).json({ success: false, error: "Tipo inválido" });
-    }
-    if (typeof largura !== "number" || typeof altura !== "number" || largura <= 0 || altura <= 0) {
-      return res.status(400).json({ success: false, error: "Medidas inválidas" });
-    }
-    if (!email || typeof email !== "string" || !email.includes("@")) {
-      return res.status(400).json({ success: false, error: "Email inválido" });
-    }
-
-    const { area, total } = calcTotal({ tipo, acabamento, largura, altura, instalacao, urgencia, calha, blackout });
-
-    // gerar PDF
-    const fileName = `orcamento-${Date.now()}.pdf`;
-    const filePath = `/tmp/${fileName}`;
-
-    await new Promise((resolve, reject) => {
+// Helper: cria PDF em memória (Buffer)
+function gerarPdfTeste({ largura, altura, email }) {
+  return new Promise((resolve, reject) => {
+    try {
       const doc = new PDFDocument({ size: "A4", margin: 50 });
-      const stream = fs.createWriteStream(filePath);
 
-      stream.on("finish", resolve);
-      stream.on("error", reject);
+      const chunks = [];
+      doc.on("data", (c) => chunks.push(c));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
 
-      doc.pipe(stream);
+      doc.fontSize(18).text("Orçamento (Teste) — Guia Lar", { align: "left" });
+      doc.moveDown(0.8);
 
-      doc.fontSize(20).text("Orçamento — Guia Lar", { align: "center" });
-      doc.moveDown();
+      doc.fontSize(12).fillColor("#111827");
+      doc.text(`Cliente: ${email}`);
+      doc.text(`Largura da janela: ${largura} cm`);
+      doc.text(`Altura da janela: ${altura} cm`);
+      doc.moveDown(1);
 
-      doc.fontSize(12).text(`Data: ${new Date().toLocaleString("pt-PT")}`);
-      doc.moveDown();
+      // Exemplo de cálculo simples (apenas para teste)
+      const areaM2 = (largura / 100) * (altura / 100);
+      const precoBase = 45; // €/m2 (exemplo)
+      const total = Math.round(areaM2 * precoBase * 100) / 100;
 
-      doc.fontSize(14).text("Cliente");
-      doc.fontSize(12).text(`Nome: ${cliente?.nome || "-"}`);
-      doc.text(`Email: ${email}`);
-      doc.text(`Telefone: ${cliente?.telefone || "-"}`);
-      doc.text(`Localidade: ${cliente?.localidade || "-"}`);
+      doc.text(`Área (aprox.): ${areaM2.toFixed(2)} m²`);
+      doc.text(`Preço base (exemplo): ${precoBase.toFixed(2)} €/m²`);
+      doc.moveDown(0.6);
+      doc.fontSize(14).text(`TOTAL (exemplo): ${total.toFixed(2)} €`, { underline: true });
 
-      doc.moveDown();
-      doc.fontSize(14).text("Pedido");
-      doc.fontSize(12).text(`Tipo: ${tipo}`);
-      doc.text(`Acabamento: ${acabamento || "standard"}`);
-      doc.text(`Medidas: ${largura.toFixed(2)} m × ${altura.toFixed(2)} m`);
-      doc.text(`Área: ${area.toFixed(2)} m²`);
-      doc.text(`Instalação: ${instalacao || "sem"}`);
-      doc.text(`Urgência: ${urgencia || "normal"}`);
-      doc.text(`Calha/Varão: ${calha || "nenhuma"}`);
-      doc.text(`Blackout: ${blackout || "nao"}`);
-
-      doc.moveDown();
-      doc.fontSize(16).text(`Total estimado: €${total.toFixed(2)}`);
-
-      doc.moveDown();
-      doc.fontSize(10).fillColor("#444")
-        .text("Nota: Este valor é estimativo. A confirmação final pode depender de validação no local e materiais escolhidos.");
+      doc.moveDown(2);
+      doc.fontSize(10).fillColor("#6b7280");
+      doc.text("Nota: Este PDF é um teste automático. O preço é meramente ilustrativo.");
 
       doc.end();
-    });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
 
-    // enviar email
-    const transporter = nodemailer.createTransport({
-      host: "smtp.hostinger.com",
-      port: 587,
-      secure: false,
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-    });
+// Endpoint de teste
+app.post("/orcamento/teste", async (req, res) => {
+  try {
+    const { largura, altura, email } = req.body || {};
 
-    await transporter.verify();
-
-    const mailOptions = {
-      from: `"Guia Lar" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "O seu orçamento — Guia Lar (PDF em anexo)",
-      text: "Segue em anexo o seu orçamento em PDF. Obrigado!",
-      attachments: [{ filename: fileName, path: filePath }]
-    };
-
-    await transporter.sendMail(mailOptions);
-
-    // (opcional) cópia para ti (ativa se quiseres)
-    if (process.env.EMAIL_CC && process.env.EMAIL_CC.includes("@")) {
-      await transporter.sendMail({
-        ...mailOptions,
-        to: process.env.EMAIL_CC,
-        subject: "CÓPIA — Pedido de Orçamento (PDF)"
-      });
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ error: "Email inválido." });
+    }
+    const w = Number(largura);
+    const h = Number(altura);
+    if (!Number.isFinite(w) || w <= 0 || !Number.isFinite(h) || h <= 0) {
+      return res.status(400).json({ error: "Medidas inválidas. Usa números > 0." });
     }
 
-    return res.json({ success: true, total });
+    // 1) gerar PDF
+    const pdfBuffer = await gerarPdfTeste({ largura: w, altura: h, email });
+
+    // 2) configurar transporte SMTP (ENV VARS)
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: String(process.env.SMTP_SECURE || "false") === "true", // true se 465
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+
+    const from = process.env.MAIL_FROM || process.env.SMTP_USER;
+
+    // 3) enviar email com anexo
+    await transporter.sendMail({
+      from,
+      to: email,
+      subject: "Orçamento (Teste) — Guia Lar",
+      text: `Olá! Segue em anexo o PDF de teste com as medidas (${w}cm x ${h}cm).`,
+      attachments: [
+        {
+          filename: "orcamento-teste-guialar.pdf",
+          content: pdfBuffer,
+          contentType: "application/pdf"
+        }
+      ]
+    });
+
+    return res.json({ message: "Email enviado com sucesso ✅ (verifica a caixa de entrada/spam)" });
   } catch (err) {
-    console.error("ERRO /orcamento:", err);
-    return res.status(500).json({ success: false, error: err.message || "Erro interno" });
+    console.error(err);
+    return res.status(500).json({ error: "Erro ao gerar/enviar o orçamento. Vê os logs do Node." });
   }
 });
 
